@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import {HiArrowNarrowDown, HiArrowNarrowLeft, HiArrowNarrowRight, HiArrowNarrowUp} from "react-icons/hi";
 import useKeypress from "react-use-keypress";
 import io from "socket.io-client";
-import {Link} from "react-router-dom";
 
 const socket = io.connect("http://localhost:3001");
 
@@ -12,14 +11,26 @@ const MultiplayerSnakeGame = () => {
     const [snakeNumber, setSnakeNumber] = useState(0);
     const [room, setRoom] = useState("");
     const [move, setMove] = useState(null);
-    const [opponentMove, setOpponentMove] = useState(null);
-    const [foodPlace, setFoodPlace] = useState({...randomFoodPlace()});
+    const [foodPlace, setFoodPlace] = useState({});
     const [yourSnakePlace, setYourSnakePlace] = useState([]);
     const [opponentSnakePlace, setOpponentSnakePlace] = useState([]);
-    const [gameOver, setGameOver] = useState(false);
+    const [gameOver, setGameOver] = useState("");
 
     const yourSnakeColor = snakeNumber === 1 ? "bg-gray-300 border-gray-500" : "bg-yellow-300 border-yellow-500";
     const opponentSnakeColor = snakeNumber === 2 ? "bg-gray-300 border-gray-500" : "bg-yellow-300 border-yellow-500";
+
+    useKeypress("ArrowUp", () => {
+        directionChanging('Up')
+    })
+    useKeypress("ArrowDown", () => {
+        directionChanging('Down')
+    })
+    useKeypress("ArrowLeft", () => {
+        directionChanging('Left')
+    })
+    useKeypress("ArrowRight", () => {
+        directionChanging('Right')
+    })
 
     function joinRoom () {
         if (room !== "") {
@@ -49,91 +60,36 @@ const MultiplayerSnakeGame = () => {
             }
             setStartGame(true);
         });
-    };
+    }
 
+    function sendPlace (place) {
+        socket.emit("send_place", {place, room})
+    }
 
+    function sendFoodPlace (place) {
+        socket.emit("send_food_place", {food: place, room})
+    }
 
-    function sendDirection (direction) {
-        socket.emit("send_direction_changing", {direction,room})
+    function sendGameOver (message) {
+        socket.emit("send_gameOver", {message:message, room})
     }
 
     useEffect(()=>{
-        socket.on("receive_direction_changing", (data) =>{
-            opponentDirectionChanging(data.direction)
+        socket.on("receive_place", (data) => {
+            setOpponentSnakePlace(data.place)
+        })
+
+        socket.on("receive_food_place", (data) => {
+            setFoodPlace(data.food)
+        })
+
+        socket.on("receive_gameOver", (data) => {
+            setGameOver(data.message)
         })
     },[socket])
 
-    const opponentDirectionChanging = (newDirection) => {
-        opponentMove && clearInterval(opponentMove);
-        const opponentPlace = [...opponentSnakePlace];
-        const interval = setInterval(function () {
-            const opponentHead = {...opponentPlace[opponentPlace.length - 1]};
-            switch (newDirection) {
-                case "Up" : {
-                    opponentHead.top -= 5;
-                    break;
-                }
-                case "Down" : {
-                    opponentHead.top += 5;
-                    break;
-                }
-                case "Left" : {
-                    opponentHead.left -= 5;
-                    break;
-                }
-                case "Right" : {
-                    opponentHead.left += 5;
-                    break;
-                }
-            }
-            if (opponentHead.top === foodPlace.top && opponentHead.left === foodPlace.left) {
-                setFoodPlace(foodPlaceRandomizer());
-                opponentPlace.unshift({});
-            }
-            opponentPlace.push(opponentHead);
-            opponentPlace.shift()
-            setOpponentSnakePlace([...opponentPlace]);
-        },200)
-        setOpponentMove(interval);
-    }
-
-    function randomFoodPlace() {
-        const foodTopArg = Math.floor(Math.random() * 10) * 5;
-        const foodLeftArg = Math.floor(Math.random() * 10) * 5;
-        return {top: foodTopArg, left: foodLeftArg};
-    }
-
-    const foodPlaceRandomizer = () => {
-        let normalPlace = false
-        while (!normalPlace) {
-            const foodTopArg = Math.floor(Math.random() * 10) * 5;
-            const foodLeftArg = Math.floor(Math.random() * 10) * 5;
-            let gg = {top: foodTopArg, left: foodLeftArg};
-            let arr = yourSnakePlace.filter(el => (el.top === gg.top && el.left === gg.left));
-            if (arr.length === 0){
-                normalPlace = true;
-                return gg;
-            }
-        }
-    }
-
-    useKeypress("ArrowUp", () => {
-        directionChanging('Up')
-    })
-    useKeypress("ArrowDown", () => {
-        directionChanging('Down')
-    })
-    useKeypress("ArrowLeft", () => {
-        directionChanging('Left')
-    })
-    useKeypress("ArrowRight", () => {
-        directionChanging('Right')
-    })
-
-
     const directionChanging = (newDirection) => {
         move && clearInterval(move)
-        sendDirection(newDirection);
         const place = [...yourSnakePlace];
         const interval = setInterval(function () {
             const head = {...place[place.length - 1]};
@@ -156,15 +112,64 @@ const MultiplayerSnakeGame = () => {
                 }
             }
             if (head.top === foodPlace.top && head.left === foodPlace.left) {
-                setFoodPlace(foodPlaceRandomizer());
+                const newFoodPlace = {...recursionFood()};
+                setFoodPlace(newFoodPlace);
+                sendFoodPlace(newFoodPlace);
                 place.unshift({});
             }
+
+            yourSnakePlace.forEach((el, index)=> {
+                if (index !== place.length - 1 && el.top === head.top && el.left === head.left) {
+                    setGameOver("you");
+                    sendGameOver ("opp");
+                }
+            })
+
+            opponentSnakePlace.forEach(el=>{
+                if (el.top === head.top && el.left === head.left) {
+                    setGameOver("you");
+                    sendGameOver ("opp");
+                }
+            })
+
             place.push(head);
             place.shift()
-
             setYourSnakePlace([...place]);
+            sendPlace(place);
         },200)
         setMove(interval);
+    }
+
+    function recursionFood () {
+        let yourSnake = [...yourSnakePlace];
+        let opponentSnake = [...opponentSnakePlace];
+        const foodTopArg = Math.floor(Math.random() * 10) * 5;
+        const foodLeftArg = Math.floor(Math.random() * 10) * 5;
+        let food = {top: foodTopArg, left: foodLeftArg};
+        yourSnake = yourSnake.filter(el=>(el.top === food.top && el.left === food.left));
+        opponentSnake = opponentSnake.filter(el=>(el.top === food.top && el.left === food.left));
+        return yourSnake.length === 0 && opponentSnake.length === 0 ? food : recursionFood();
+    }
+
+
+
+    useEffect(()=>{
+        yourSnakePlace.forEach(el=>{
+            if (el.top > 100 || el.top < 0 || el.left > 100 || el.left < 0) {
+                setGameOver("you");
+                sendGameOver ("opp");
+            }
+        })
+    })
+
+    if (gameOver === "you" || gameOver === "opp") {
+        return (
+            <div className="w-full h-screen bg-[#0a192a] text-center flex text-4xl text-white font-bold justify-center items-center">
+                GAME OVER
+                <br/>
+                {gameOver === "you" ? 'YOU LOSE' : 'YOU WIN'}
+            </div>
+        )
     }
 
     return (
@@ -177,18 +182,18 @@ const MultiplayerSnakeGame = () => {
                     }}
                 />
                 <button className="border-2 px-2" onClick={joinRoom}> Join Room</button>
-                <div className="border ml-2">You are {snakeNumber} player, Join the game</div>
+                <div className="border ml-2">{room ? `You are ${snakeNumber === 1 ? "Gray" : "Yellow"} player` : 'Waiting you or other player'}</div>
             </div>
             <div className={`${startGame ? "" : "hidden"}`}>
                 <div>
                 <div className="mx-auto top-[150px] border-red-600 border-4 w-[500px] h-[500px] relative">
-                    {yourSnakePlace.map((part, index) => {
+                    {yourSnakePlace && yourSnakePlace.map((part, index) => {
                         return (
                             <div key={index} className={`w-[5%] h-[5%] border-2 absolute ${yourSnakeColor}`}
                                  style={{top: `${part.top}%`, left: `${part.left}%`}}></div>
                         )
                     })}
-                    {opponentSnakePlace.map((part, index) => {
+                    {opponentSnakePlace && opponentSnakePlace.map((part, index) => {
                         return (
                             <div key={index} className={`w-[5%] h-[5%] border-2 absolute ${opponentSnakeColor}`}
                                  style={{top: `${part.top}%`, left: `${part.left}%`}}></div>
