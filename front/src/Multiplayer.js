@@ -3,14 +3,18 @@ import {HiArrowNarrowDown, HiArrowNarrowLeft, HiArrowNarrowRight, HiArrowNarrowU
 import useKeypress from "react-use-keypress";
 import io from "socket.io-client";
 
-const socket = io.connect("http://localhost:3001");
+// const socket = io.connect("https://snakegame-multi.herokuapp.com/");
+const socket = io.connect("http://localhost:3001/");
 
 const MultiplayerSnakeGame = () => {
 
-    const [startGame, setStartGame] = useState(false);
+    const [roomEnter, setRoomEnter] = useState(false);
     const [snakeNumber, setSnakeNumber] = useState(0);
     const [room, setRoom] = useState("");
+    const [readyForGame, setReadyForGame] = useState("not ready");
+    const [show, setShow] = useState(true);
     const [move, setMove] = useState(null);
+    const [direction, setDirection] = useState("");
     const [foodPlace, setFoodPlace] = useState({});
     const [yourSnakePlace, setYourSnakePlace] = useState([]);
     const [opponentSnakePlace, setOpponentSnakePlace] = useState([]);
@@ -20,16 +24,44 @@ const MultiplayerSnakeGame = () => {
     const opponentSnakeColor = snakeNumber === 2 ? "bg-gray-300 border-gray-500" : "bg-yellow-300 border-yellow-500";
 
     useKeypress("ArrowUp", () => {
-        directionChanging('Up')
+        if (direction !== "Down" && !show) {
+            directionChanging('Up')
+        }
     })
     useKeypress("ArrowDown", () => {
-        directionChanging('Down')
+        if (direction !== "Up" && !show) {
+            directionChanging('Down')
+        }
     })
     useKeypress("ArrowLeft", () => {
-        directionChanging('Left')
+        if (direction !== "Right" && !show) {
+            directionChanging('Left')
+        }
     })
     useKeypress("ArrowRight", () => {
-        directionChanging('Right')
+        if (direction !== "Left" && !show) {
+            directionChanging('Right')
+        }
+    })
+    useKeypress("w", () => {
+        if (direction !== "Down" && !show) {
+            directionChanging('Up')
+        }
+    })
+    useKeypress("s", () => {
+        if (direction !== "Up" && !show) {
+            directionChanging('Down')
+        }
+    })
+    useKeypress("a", () => {
+        if (direction !== "Right" && !show) {
+            directionChanging('Left')
+        }
+    })
+    useKeypress("d", () => {
+        if (direction !== "Left" && !show) {
+            directionChanging('Right')
+        }
     })
 
     function joinRoom () {
@@ -58,7 +90,7 @@ const MultiplayerSnakeGame = () => {
                     {top: 95, left: 90},
                 ])
             }
-            setStartGame(true);
+            setRoomEnter(true);
         });
     }
 
@@ -70,26 +102,35 @@ const MultiplayerSnakeGame = () => {
         socket.emit("send_food_place", {food: place, room})
     }
 
+    function sendStartGame () {
+        socket.emit("send_ready", {message: "ready", room})
+    }
+
     function sendGameOver (message) {
         socket.emit("send_gameOver", {message:message, room})
     }
 
     useEffect(()=>{
         socket.on("receive_place", (data) => {
-            setOpponentSnakePlace(data.place)
+            setOpponentSnakePlace(data.place);
         })
 
         socket.on("receive_food_place", (data) => {
-            setFoodPlace(data.food)
+            setFoodPlace(data.food);
+        })
+
+        socket.on("receive_ready", (data) => {
+            setReadyForGame(data.message)
         })
 
         socket.on("receive_gameOver", (data) => {
-            setGameOver(data.message)
+            setGameOver(data.message);
         })
     },[socket])
 
-    const directionChanging = (newDirection) => {
-        move && clearInterval(move)
+    function directionChanging (newDirection) {
+        move && clearInterval(move);
+        setDirection(newDirection)
         const place = [...yourSnakePlace];
         const interval = setInterval(function () {
             const head = {...place[place.length - 1]};
@@ -125,19 +166,16 @@ const MultiplayerSnakeGame = () => {
                 }
             })
 
-            opponentSnakePlace.forEach(el=>{
-                if (el.top === head.top && el.left === head.left) {
-                    setGameOver("you");
-                    sendGameOver ("opp");
-                }
-            })
-
             place.push(head);
             place.shift()
             setYourSnakePlace([...place]);
             sendPlace(place);
         },200)
-        setMove(interval);
+        if (gameOver){
+            clearInterval(interval)
+        } else {
+            setMove(interval);
+        }
     }
 
     function recursionFood () {
@@ -151,23 +189,74 @@ const MultiplayerSnakeGame = () => {
         return yourSnake.length === 0 && opponentSnake.length === 0 ? food : recursionFood();
     }
 
-
-
     useEffect(()=>{
         yourSnakePlace.forEach(el=>{
-            if (el.top > 100 || el.top < 0 || el.left > 100 || el.left < 0) {
+            if (el.top > 95 || el.top < 0 || el.left > 95 || el.left < 0) {
                 setGameOver("you");
                 sendGameOver ("opp");
             }
         })
+
+        opponentSnakePlace.forEach(el=>{
+            if (el.top === yourSnakePlace[yourSnakePlace.length - 1].top && el.left === yourSnakePlace[yourSnakePlace.length - 1].left) {
+                gameOverHandler();
+            }
+        })
+
+        if (readyForGame === "ready") {
+            setShow(false);
+            if (snakeNumber === 1) {
+                setDirection("Right")
+                directionChanging("Right")
+            }else {
+                setDirection("Left")
+                directionChanging("Left")
+            }
+            setReadyForGame("not ready")
+        }
     })
 
+    function gameOverHandler () {
+        setGameOver("you");
+        sendGameOver ("opp");
+    }
+
+    function restartTheGame () {
+        setGameOver("");
+        setShow(true);
+        setFoodPlace({top: 45, left: 45});
+        if (snakeNumber === 1) {
+            setYourSnakePlace([
+                {top: 0, left: 0},
+                {top: 0, left: 5},
+            ])
+            setOpponentSnakePlace([
+                {top: 95, left: 95},
+                {top: 95, left: 90},
+            ])
+        } else {
+            setOpponentSnakePlace([
+                {top: 0, left: 0},
+                {top: 0, left: 5},
+            ])
+            setYourSnakePlace([
+                {top: 95, left: 95},
+                {top: 95, left: 90},
+            ])
+        }
+    }
+
     if (gameOver === "you" || gameOver === "opp") {
+        clearInterval(move);
         return (
             <div className="w-full h-screen bg-[#0a192a] text-center flex text-4xl text-white font-bold justify-center items-center">
-                GAME OVER
-                <br/>
-                {gameOver === "you" ? 'YOU LOSE' : 'YOU WIN'}
+                <div className="text-center">
+                    GAME OVER
+                    <br/>
+                    {gameOver === "you" ? 'YOU LOSE' : 'YOU WIN'}
+                    <br/>
+                    <button className="mt-4 w-full py-3 border border-white hover:bg-white hover:text-[#0a192a] duration-300 px-3" onClick={() => {restartTheGame()}}>Restart The Game</button>
+                </div>
             </div>
         )
     }
@@ -184,7 +273,7 @@ const MultiplayerSnakeGame = () => {
                 <button className="border-2 px-2" onClick={joinRoom}> Join Room</button>
                 <div className="border ml-2">{room ? `You are ${snakeNumber === 1 ? "Gray" : "Yellow"} player` : 'Waiting you or other player'}</div>
             </div>
-            <div className={`${startGame ? "" : "hidden"}`}>
+            <div className={`${roomEnter ? "" : "hidden"}`}>
                 <div>
                 <div className="mx-auto top-[150px] border-red-600 border-4 w-[500px] h-[500px] relative">
                     {yourSnakePlace && yourSnakePlace.map((part, index) => {
@@ -201,6 +290,8 @@ const MultiplayerSnakeGame = () => {
                     })}
                     <div className="w-[5%] h-[5%] bg-red-500 border-gray-500  border-2 absolute"
                          style={{top: `${foodPlace.top}%`, left: `${foodPlace.left}%`}}></div>
+                    {show && <button onClick={()=>{ sendStartGame(); setReadyForGame("ready") }} className="absolute top-[45%] left-[36%] w-[28%] h-[10%] bg-white text-xl font-bold">Start game</button>
+                    }
                 </div>
             </div>
             {/*<div className="mt-56 w-full">*/}

@@ -9,11 +9,11 @@ app.use(cors());
 
 const server = http.createServer(app);
 
-app.use(express.static(path.join(__dirname, "build")));
-
-app.get("/*", (req, res) => {
-    res.sendFile(path.join(__dirname, "build", "index.html"))
-})
+// app.use(express.static(path.join(__dirname, "build")));
+//
+// app.get("/*", (req, res) => {
+//     res.sendFile(path.join(__dirname, "build", "index.html"))
+// })
 
 const io = new Server(server, {
     cors: {
@@ -43,6 +43,10 @@ io.on("connection", (socket) => {
 
     socket.on("send_food_place", (data) => {
         socket.to(data.room).emit("receive_food_place", data);
+    })
+
+    socket.on("send_ready", (data) => {
+        socket.to(data.room).emit("receive_ready", data);
     })
 
     socket.on("send_gameOver", (data) => {
